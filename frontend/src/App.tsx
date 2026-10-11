@@ -18,7 +18,8 @@ import {
 import {
   fetchAssets,
   analyzePortfolio,
-  fetchDemoPortfolio
+  fetchDemoPortfolio,
+  refreshMarketData
 } from './lib/api';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -27,6 +28,7 @@ export function App() {
   const [availableAssets, setAvailableAssets] = useState<AssetInfo[]>([]);
   const [analysisData, setAnalysisData] = useState<PortfolioAnalyzeResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Default request state
@@ -68,6 +70,23 @@ export function App() {
     }
     init();
   }, []);
+
+  const handleRefreshMarketData = async () => {
+    setIsRefreshing(true);
+    setErrorMsg(null);
+    try {
+      await refreshMarketData();
+      const assets = await fetchAssets().catch(() => []);
+      setAvailableAssets(assets);
+      const res = await analyzePortfolio(currentRequest);
+      setAnalysisData(res);
+    } catch (err: any) {
+      console.error('Market data sync error:', err);
+      setErrorMsg(err.message || 'Market data refresh failed.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleRunAnalysis = async (req: PortfolioAnalyzeRequest) => {
     setIsLoading(true);
@@ -112,8 +131,10 @@ export function App() {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        dataAsOf={analysisData?.data_as_of || '2026-06-08'}
+        dataAsOf={analysisData?.data_as_of || '2026-10-09'}
         isFallback={analysisData?.is_fallback_data || false}
+        onRefreshMarketData={handleRefreshMarketData}
+        isRefreshing={isRefreshing}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">

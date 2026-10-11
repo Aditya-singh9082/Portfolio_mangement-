@@ -57,6 +57,19 @@ export interface BenchmarkMetrics {
   sharpe_ratio: number;
 }
 
+export interface BenchmarkComparisonDetails {
+  ticker: string;
+  name: string;
+  alpha_pct: number;
+  beta: number;
+  correlation: number;
+  tracking_error_pct: number;
+  information_ratio: number;
+  treynor_ratio: number;
+  outperforming_return: boolean;
+  outperforming_risk_adjusted: boolean;
+}
+
 export interface StrategyComparison {
   name: string;
   total_return_pct: number;
@@ -121,6 +134,53 @@ export interface HorizonRiskMetric {
   ci_high_inr?: number;
 }
 
+export interface MLRiskPrediction {
+  predicted_class: 'Low' | 'Medium' | 'High';
+  confidence_probabilities: Record<string, number>;
+  feature_attribution: Array<{
+    feature: string;
+    display_name: string;
+    value: number;
+    model_weight_pct: number;
+  }>;
+  explanation: string;
+  calculated_features: Record<string, number>;
+  algorithm: string;
+}
+
+export interface MarketIntelligenceReport {
+  overall_outlook: string;
+  outlook_color: string;
+  bullish_exposure_pct: number;
+  neutral_exposure_pct: number;
+  cautious_exposure_pct: number;
+  macro_indicators: Array<{
+    indicator: string;
+    value: string;
+    stance: string;
+    impact: string;
+    sentiment: string;
+  }>;
+  sector_analyses: Array<{
+    sector: string;
+    weight_pct: number;
+    sentiment: string;
+    catalysts: string;
+    key_risks: string;
+  }>;
+  actionable_insights: string[];
+}
+
+export interface RiskReturnPoint {
+  name: string;
+  ticker?: string;
+  vol_pct: number;
+  ret_pct: number;
+  sharpe: number;
+  point_type: 'asset' | 'portfolio' | 'recommended' | 'benchmark' | 'equal_weight';
+  weight_pct?: number;
+}
+
 export interface PortfolioAnalyzeResponse {
   data_as_of: string;
   currency: string;
@@ -145,10 +205,15 @@ export interface PortfolioAnalyzeResponse {
     cvar_95_amount: number;
     var_method: string;
   };
+  ml_risk_prediction: MLRiskPrediction;
+  market_intelligence: MarketIntelligenceReport;
   asset_metrics: AssetMetric[];
+  correlation_matrix: Record<string, Record<string, number>>;
+  risk_return_points: RiskReturnPoint[];
   risk_contributions: RiskContribution[];
   performance_series: PerformancePoint[];
   benchmark_metrics: BenchmarkMetrics;
+  benchmark_comparison: BenchmarkComparisonDetails;
   strategies: StrategyComparison[];
   recommendation: Recommendation;
   model_diagnostics: ModelDiagnostics;
@@ -181,4 +246,12 @@ export interface StressTestResponse {
     loss_inr: number;
   }>;
   assumptions: string[];
+}
+
+export interface MarketDataRefreshResponse {
+  status: string;
+  message: string;
+  tickers_updated: string[];
+  data_as_of: string;
+  total_trading_days: number;
 }

@@ -3,10 +3,22 @@ import {
   PortfolioAnalyzeRequest,
   PortfolioAnalyzeResponse,
   StressTestRequest,
-  StressTestResponse
+  StressTestResponse,
+  MarketDataRefreshResponse
 } from '../types';
 
 const API_BASE = '/api';
+
+export async function refreshMarketData(): Promise<MarketDataRefreshResponse> {
+  const res = await fetch(`${API_BASE}/market-data/refresh`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Market data refresh failed with status ${res.status}`);
+  }
+  return res.json();
+}
 
 export async function fetchHealth(): Promise<{ status: string; service: string }> {
   const res = await fetch(`${API_BASE}/health`);
