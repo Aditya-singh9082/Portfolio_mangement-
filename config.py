@@ -66,15 +66,14 @@ MC_SEED = 42                           # reproducibility
 # ---------------------------------------------------------------------------
 # 4. DATES
 #    - History starts 2018 (captures COVID-2020 crash for backtesting).
-#    - Train strictly BEFORE 1 March 2026.
-#    - Out-of-sample backtest: 2 March 2026 -> 6 June 2026.
-#    - "Today" prediction is made from the latest available data.
+#    - Out-of-sample backtest & live predictions up to the latest available date.
 # ---------------------------------------------------------------------------
+import datetime
 HISTORY_START = "2018-01-01"
-TRAIN_END = "2026-03-01"               # exclusive cut-off (train on dates < this)
-BACKTEST_END = "2026-06-06"
-TODAY = "2026-06-08"
-DOWNLOAD_END = "2026-06-09"            # yfinance 'end' is exclusive; pad by 1 day
+TODAY = datetime.date.today().isoformat()
+DOWNLOAD_END = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+TRAIN_END = "2026-03-01"
+BACKTEST_END = TODAY
 
 # ---------------------------------------------------------------------------
 # 5. PATHS
@@ -87,6 +86,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 
 PRICES_CSV = os.path.join(DATA_DIR, "prices_adjusted_close.csv")
+BENCHMARK_CSV = os.path.join(DATA_DIR, "benchmark_nifty50.csv")
 RETURNS_CSV = os.path.join(DATA_DIR, "daily_returns.csv")   # asset-level simple returns
 WEIGHTS_CSV = os.path.join(DATA_DIR, "portfolio_weights.csv")
 PORT_RET_CSV = os.path.join(DATA_DIR, "portfolio_returns.csv")

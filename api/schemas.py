@@ -61,6 +61,19 @@ class BenchmarkMetrics(BaseModel):
     sharpe_ratio: float
 
 
+class BenchmarkComparisonDetails(BaseModel):
+    ticker: str
+    name: str
+    alpha_pct: float
+    beta: float
+    correlation: float
+    tracking_error_pct: float
+    information_ratio: float
+    treynor_ratio: float
+    outperforming_return: bool
+    outperforming_risk_adjusted: bool
+
+
 class StrategyComparison(BaseModel):
     name: str
     total_return_pct: float
@@ -121,6 +134,36 @@ class HorizonRiskMetric(BaseModel):
     ci_high_inr: Optional[float] = None
 
 
+class MLRiskPrediction(BaseModel):
+    predicted_class: str
+    confidence_probabilities: Dict[str, float]
+    feature_attribution: List[Dict[str, Any]]
+    explanation: str
+    calculated_features: Dict[str, float]
+    algorithm: str
+
+
+class MarketIntelligenceReport(BaseModel):
+    overall_outlook: str
+    outlook_color: str
+    bullish_exposure_pct: float
+    neutral_exposure_pct: float
+    cautious_exposure_pct: float
+    macro_indicators: List[Dict[str, Any]]
+    sector_analyses: List[Dict[str, Any]]
+    actionable_insights: List[str]
+
+
+class RiskReturnPoint(BaseModel):
+    name: str
+    ticker: Optional[str] = None
+    vol_pct: float
+    ret_pct: float
+    sharpe: float
+    point_type: str  # "asset", "portfolio", "recommended", "benchmark", "equal_weight"
+    weight_pct: Optional[float] = None
+
+
 class PortfolioAnalyzeResponse(BaseModel):
     model_config = {"protected_namespaces": ()}
     data_as_of: str
@@ -128,10 +171,15 @@ class PortfolioAnalyzeResponse(BaseModel):
     is_fallback_data: bool = False
     portfolio: Dict[str, Any]
     risk: Dict[str, Any]
+    ml_risk_prediction: MLRiskPrediction
+    market_intelligence: MarketIntelligenceReport
     asset_metrics: List[AssetMetric]
+    correlation_matrix: Dict[str, Dict[str, float]]
+    risk_return_points: List[RiskReturnPoint]
     risk_contributions: List[RiskContribution]
     performance_series: List[PerformancePoint]
     benchmark_metrics: BenchmarkMetrics
+    benchmark_comparison: BenchmarkComparisonDetails
     strategies: List[StrategyComparison]
     recommendation: Recommendation
     model_diagnostics: ModelDiagnostics
@@ -158,3 +206,11 @@ class StressTestResponse(BaseModel):
     duration_trading_days: int
     asset_impacts: List[Dict[str, Any]]
     assumptions: List[str]
+
+
+class MarketDataRefreshResponse(BaseModel):
+    status: str
+    message: str
+    tickers_updated: List[str]
+    data_as_of: str
+    total_trading_days: int

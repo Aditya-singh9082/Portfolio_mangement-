@@ -24,6 +24,21 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
   const pinball95 = pinball.filter(p => p.confidence === '95%').sort((a, b) => a.rank - b.rank);
   const pinball99 = pinball.filter(p => p.confidence === '99%').sort((a, b) => a.rank - b.rank);
 
+  // Dynamic metrics for horizon summary
+  const metrics1d = data.risk_metrics_by_horizon.filter(m => m.horizon === '1-day');
+  const metrics1w = data.risk_metrics_by_horizon.filter(m => m.horizon === '1-week');
+
+  const var95_1d_min = metrics1d.length > 0 ? Math.min(...metrics1d.filter(m => m.confidence === '95%').map(m => m.var_inr)) : 0;
+  const var95_1d_max = metrics1d.length > 0 ? Math.max(...metrics1d.filter(m => m.confidence === '95%').map(m => m.var_inr)) : 0;
+
+  const var99_1d_min = metrics1d.length > 0 ? Math.min(...metrics1d.filter(m => m.confidence === '99%').map(m => m.var_inr)) : 0;
+  const var99_1d_max = metrics1d.length > 0 ? Math.max(...metrics1d.filter(m => m.confidence === '99%').map(m => m.var_inr)) : 0;
+
+  const var95_1w_min = metrics1w.length > 0 ? Math.min(...metrics1w.filter(m => m.confidence === '95%').map(m => m.var_inr)) : 0;
+  const var95_1w_max = metrics1w.length > 0 ? Math.max(...metrics1w.filter(m => m.confidence === '95%').map(m => m.var_inr)) : 0;
+
+  const cvar99_1w_max = metrics1w.length > 0 ? Math.max(...metrics1w.filter(m => m.confidence === '99%').map(m => m.cvar_inr)) : 0;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -31,10 +46,10 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
         <div>
           <div className="flex items-center space-x-2 mb-1">
             <CheckCircle2 className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-base font-bold text-white tracking-tight">Model Validation & Backtest Evidence</h2>
+            <h2 className="text-base font-bold text-white tracking-tight">Dynamic Model Validation & Backtest Evidence</h2>
           </div>
           <p className="text-xs text-gray-400">
-            Out-of-sample statistical backtesting, Kupiec POF tests, and pinball loss scoring.
+            Out-of-sample backtesting, Kupiec POF calibration tests, and pinball quantile loss calculated on your actual portfolio.
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -47,15 +62,15 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
         </div>
       </div>
 
-      {/* Prominent Sample Size Warning Banner (TASK requirement) */}
+      {/* Dynamic Sample Size & Statistical Power Notice */}
       <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-4 text-xs text-amber-200 flex items-start space-x-3">
         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
         <div className="space-y-1">
           <span className="font-bold text-amber-300 text-sm">Sample Size Caveat & Statistical Power Notice:</span>
           <p className="leading-relaxed text-gray-300">
-            {diag.backtest_window.notice} At 99% confidence, expected exceptions across 65 trading days is only ~0.65 breaches. 
-            Because expected breaches are under 1, statistical tests have very low power to reject false models. 
-            <span className="text-amber-300 font-semibold"> A failure to reject a calibration test is indicative short-term evidence, NOT proof that a model is correct or calibrated for all market regimes.</span>
+            {diag.backtest_window.notice} At 99% confidence, expected exceptions across {diag.backtest_window.observations} trading days is ~{(diag.backtest_window.observations * 0.01).toFixed(2)} breaches. 
+            When expected breaches are low, statistical hypothesis tests have reduced power to reject misspecified models. 
+            <span className="text-amber-300 font-semibold"> A non-rejection of a test is indicative evidence for this specific period, not mathematical proof of unconditional calibration.</span>
           </p>
         </div>
       </div>
@@ -64,9 +79,9 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
         <div className="border-b border-gray-800 pb-3 flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-white">Model Calibration & Coverage Verification</h3>
+            <h3 className="text-sm font-semibold text-white">Dynamic Model Calibration & Exception Coverage</h3>
             <p className="text-xs text-gray-400">
-              Evaluating hit rate vs expected alpha and Kupiec Proportion-of-Failures (POF) p-values.
+              Evaluating realized breach hit rate vs nominal target &alpha; and Kupiec Proportion-of-Failures (POF) p-values.
             </p>
           </div>
           <span className="text-xs text-gray-500 font-mono">Significance: &alpha; = 0.05</span>
@@ -121,7 +136,7 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
                               : 'bg-rose-950 text-rose-300 border border-rose-800'
                           }`}
                         >
-                          {m.status}
+                          {m.verdict}
                         </span>
                       </div>
                     </td>
@@ -131,34 +146,23 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
             </tbody>
           </table>
         </div>
-
-        <div className="bg-[#162032] p-3 rounded-lg border border-gray-800 text-xs text-gray-400">
-          <p className="leading-relaxed">
-            <span className="font-semibold text-gray-300">Methodology Note: </span>
-            Notice that <span className="text-rose-400 font-bold">GARCH(1,1)-t failed 95% coverage</span> (8 breaches / 66 days, 12.12%, p=0.021), whereas <span className="text-emerald-400 font-bold">Filtered Historical Simulation (FHS) passed 95% coverage</span> (3 breaches / 65 days, 4.62%, p=0.885). 
-            They use different models and slightly different window cuts; we strictly report them separately rather than displaying a misleading blanket pass badge.
-          </p>
-        </div>
       </div>
 
-      {/* Pinball / Quantile Loss Scorecard Table */}
+      {/* Pinball Quantile Loss Scorecard */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
-        <div className="border-b border-gray-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="border-b border-gray-800 pb-3 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
               <Award className="w-4 h-4 text-amber-400" />
-              <span>Forecast Skill Scorecard — Pinball (Quantile) Loss</span>
+              <span>Model Skill Ranking (Pinball / Quantile Loss)</span>
             </h3>
             <p className="text-xs text-gray-400">
-              Scored using consistent quantile scoring function: L_&tau;(r, q) = (r - q)(&tau; - 1_&#123;r &lt; q&#125;).
+              Proper scoring rule for quantile evaluation: lower pinball loss signifies superior quantile calibration.
             </p>
           </div>
-          <span className="badge-tag bg-cyan-950 text-cyan-400 border border-cyan-800 text-xs">
-            Lower Score is Strictly Better
-          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* 95% Table */}
           <div className="bg-[#162032] border border-gray-800 rounded-xl p-4">
             <h4 className="text-xs font-bold text-white mb-3 uppercase tracking-wider text-cyan-400">
@@ -180,9 +184,11 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-gray-500 mt-3 font-sans">
-              Winner at 95%: <span className="text-emerald-400 font-semibold">Filtered Historical Simulation (FHS)</span> with lowest quantile penalty of 11.121.
-            </p>
+            {pinball95.length > 0 && (
+              <p className="text-[11px] text-gray-400 mt-3 font-sans">
+                Top calibrated model at 95%: <span className="text-emerald-400 font-semibold">{pinball95[0]?.model}</span> with lowest loss of {pinball95[0]?.pinball_loss_x1e4}.
+              </p>
+            )}
           </div>
 
           {/* 99% Table */}
@@ -206,38 +212,50 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ data }) => {
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-gray-500 mt-3 font-sans">
-              Winner at 99%: <span className="text-emerald-400 font-semibold">Historical Simulation</span> (2.945) followed by Student-t (2.968) and FHS (3.055).
-            </p>
+            {pinball99.length > 0 && (
+              <p className="text-[11px] text-gray-400 mt-3 font-sans">
+                Top calibrated model at 99%: <span className="text-emerald-400 font-semibold">{pinball99[0]?.model}</span> with loss of {pinball99[0]?.pinball_loss_x1e4}.
+              </p>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Horizon Separation Summary Box */}
+      {/* Dynamic Horizon Separation Summary Box */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-3">
         <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
           <Layers className="w-4 h-4 text-cyan-400" />
-          <span>Horizon Segregation & Metric Reference</span>
+          <span>Horizon Segregation & Capital Sizing Reference</span>
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-300">
           <div className="bg-[#162032] p-3 rounded-lg border border-gray-800">
-            <span className="font-bold text-white block mb-1">1-Day Metrics (Daily Risk Limit)</span>
+            <span className="font-bold text-white block mb-1">1-Day Horizon (Daily Tail Exposure)</span>
             <ul className="space-y-1 text-gray-400 list-disc list-inside">
-              <li>1-Day 95% VaR: ~₹1.24L (GARCH-t) to ₹1.72L (Normal)</li>
-              <li>1-Day 99% VaR: ~₹2.01L (GARCH-t) to ₹2.76L (Historical)</li>
-              <li>1-Day 99% Bootstrap CVaR: ₹4.56L [95% CI: ₹3.04L — ₹6.57L]</li>
+              <li>1-Day 95% VaR: {formatINR(var95_1d_min)} — {formatINR(var95_1d_max)} across models</li>
+              <li>1-Day 99% VaR: {formatINR(var99_1d_min)} — {formatINR(var99_1d_max)}</li>
+              <li>Primary measure for day-to-day risk management and stop-loss calibration.</li>
             </ul>
           </div>
 
           <div className="bg-[#162032] p-3 rounded-lg border border-gray-800">
-            <span className="font-bold text-white block mb-1">1-Week Metrics (Multi-Day Horizon)</span>
+            <span className="font-bold text-white block mb-1">1-Week Horizon (Multi-Day Liquidity Buffer)</span>
             <ul className="space-y-1 text-gray-400 list-disc list-inside">
-              <li>1-Week 95% VaR: ~₹2.78L (GARCH-t) to ₹3.85L (Normal)</li>
-              <li>1-Week 99% CVaR: ~₹5.70L (GARCH-t) to ₹10.20L (Historical)</li>
-              <li>Notice: 1-Week CVaR is structurally ~2.2x to 2.5x larger than 1-Day CVaR.</li>
+              <li>1-Week 95% VaR: {formatINR(var95_1w_min)} — {formatINR(var95_1w_max)}</li>
+              <li>1-Week 99% CVaR: up to {formatINR(cvar99_1w_max)} in severe stress</li>
+              <li>Scaled via &radic;5 rule and FHS compounding; structurally ~2.2x higher than 1-day metrics.</li>
             </ul>
           </div>
         </div>
+      </div>
+
+      {/* Dynamic Validation Warnings */}
+      <div className="bg-[#111827]/70 border border-[#1F293D] rounded-lg p-3 text-xs text-gray-400 space-y-1">
+        {diag.validation_warnings.map((w, idx) => (
+          <div key={idx} className="flex items-start space-x-2">
+            <span className="text-cyan-400 font-mono">•</span>
+            <span>{w}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -205,7 +205,87 @@ export const RiskTab: React.FC<RiskTabProps> = ({ data }) => {
         </div>
       )}
 
-      {/* Euler Risk Decomposition Section */}
+      {/* Risk-Return Plane Visualization (PS Brownie Point) */}
+      <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800 pb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
+              <BarChart2 className="w-4 h-4 text-cyan-400" />
+              <span>Risk vs Return Frontier (Assets, Portfolio & Benchmark)</span>
+            </h3>
+            <p className="text-xs text-gray-400">
+              Visual comparison across the risk-return spectrum: Volatility (X) vs Annualized Return (Y)
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="flex items-center space-x-1.5 px-2 py-1 bg-emerald-950 border border-emerald-700 rounded text-emerald-400 font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+              <span>Your Portfolio</span>
+            </span>
+            <span className="flex items-center space-x-1.5 px-2 py-1 bg-amber-950 border border-amber-700 rounded text-amber-400 font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              <span>Optimal Rec.</span>
+            </span>
+            <span className="flex items-center space-x-1.5 px-2 py-1 bg-cyan-950 border border-cyan-700 rounded text-cyan-400 font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+              <span>NIFTY 50</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Risk-Return Scatter Chart */}
+        <div className="h-72 w-full pt-1">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={data.risk_return_points.map(pt => ({
+                name: pt.name.replace('.NS', ''),
+                vol_pct: pt.vol_pct,
+                ret_pct: pt.ret_pct,
+                sharpe: pt.sharpe,
+                point_type: pt.point_type,
+                weight_pct: pt.weight_pct || 0
+              }))}
+            >
+              <XAxis dataKey="name" stroke="#4B5563" fontSize={11} interval={0} angle={-30} textAnchor="end" height={60} />
+              <YAxis stroke="#4B5563" fontSize={11} unit="%" />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', borderRadius: '0.5rem', fontSize: '12px' }}
+                formatter={(val: any, name: any) => [`${val}%`, name === 'ret_pct' ? 'Annual Return' : 'Annual Volatility']}
+              />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
+              <Bar dataKey="ret_pct" name="Annual Return %" fill="#10B981" radius={[4, 4, 0, 0]}>
+                {data.risk_return_points.map((pt, idx) => {
+                  let color = '#3B82F6';
+                  if (pt.point_type === 'portfolio') color = '#10B981';
+                  else if (pt.point_type === 'recommended') color = '#F59E0B';
+                  else if (pt.point_type === 'benchmark') color = '#06B6D4';
+                  else if (pt.point_type === 'equal_weight') color = '#A855F7';
+                  return <Cell key={`cell-${idx}`} fill={color} />;
+                })}
+              </Bar>
+              <Bar dataKey="vol_pct" name="Annual Volatility %" fill="#F43F5E" radius={[4, 4, 0, 0]} opacity={0.7} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+          {data.risk_return_points
+            .filter(p => ['portfolio', 'recommended', 'benchmark', 'equal_weight'].includes(p.point_type))
+            .map(p => (
+              <div key={p.name} className="bg-[#162032] p-3 rounded-lg border border-gray-800 text-xs">
+                <span className="font-semibold text-white block truncate">{p.name}</span>
+                <div className="flex justify-between items-baseline mt-1 font-mono">
+                  <span className="text-gray-400 text-[11px]">Ret / Vol:</span>
+                  <span className="text-emerald-400 font-bold">{p.ret_pct}% / <span className="text-amber-400">{p.vol_pct}%</span></span>
+                </div>
+                <div className="flex justify-between items-baseline text-[11px] font-mono mt-0.5">
+                  <span className="text-gray-500">Sharpe:</span>
+                  <span className="text-cyan-400 font-semibold">{p.sharpe}</span>
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-gray-800 pb-3">
           <div>

@@ -7,7 +7,13 @@ import {
   Activity,
   Layers,
   ArrowUpRight,
-  Info
+  Info,
+  Brain,
+  Globe,
+  Compass,
+  Zap,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { PortfolioAnalyzeResponse } from '../types';
 import { formatINR } from '../lib/api';
@@ -34,10 +40,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const p = data.portfolio;
   const r = data.risk;
   const bm = data.benchmark_metrics;
+  const bc = data.benchmark_comparison;
+  const ml = data.ml_risk_prediction;
+  const ai = data.market_intelligence;
 
   const isPositivePnL = p.pnl_amount >= 0;
 
-  // Top risk concentrators (highest risk/weight ratio)
+  // Top risk concentrators and diversifiers
   const concentrators = data.risk_contributions.filter(c => c.action_signal.includes("TRIM")).slice(0, 3);
   const diversifiers = data.risk_contributions.filter(c => c.action_signal.includes("DIVERSIFIER")).slice(0, 3);
 
@@ -46,10 +55,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       {/* Risk Profile & Top Banner */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-3 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1.5">
             <h1 className="text-xl font-bold text-white tracking-tight">Portfolio Risk Intelligence Dashboard</h1>
             <span
-              className={`badge-tag ${
+              className={`badge-tag font-semibold ${
                 r.classification === 'Low'
                   ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-700'
                   : r.classification === 'Medium'
@@ -59,12 +68,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             >
               Risk Class: {r.classification}
             </span>
+            <span className="badge-tag bg-cyan-950 text-cyan-400 border border-cyan-800 flex items-center space-x-1">
+              <Brain className="w-3 h-3 inline" />
+              <span>ML: {ml.predicted_class} ({Math.round((ml.confidence_probabilities[ml.predicted_class] || 0.8) * 100)}%)</span>
+            </span>
             <span className="badge-tag bg-slate-800 text-slate-300 border border-slate-700">
-              {r.classification_type}
+              {data.is_fallback_data ? 'Fallback CSV' : 'Live NSE Data'}
             </span>
           </div>
           <p className="text-xs text-gray-400 max-w-3xl leading-relaxed">
-            {r.classification_details} Analyzed over {data.performance_series.length} data samples against NIFTY 50 benchmark.
+            {r.classification_details} Aligned with NIFTY 50 ({bm.ticker}) over {data.performance_series.length} evaluated trading dates.
           </p>
         </div>
 
@@ -81,7 +94,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             className="px-3.5 py-2 rounded-lg bg-[#1F293D] hover:bg-[#2A374F] text-gray-200 text-xs font-semibold border border-gray-700 transition-colors flex items-center space-x-1.5"
           >
             <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Deep Risk</span>
+            <span>Risk Breakdown</span>
           </button>
         </div>
       </div>
@@ -101,7 +114,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             ) : (
               <TrendingDown className="w-4 h-4 text-rose-400 inline" />
             )}
-            <span className={isPositivePnL ? 'text-emerald-400' : 'text-rose-400'}>
+            <span className={isPositivePnL ? 'text-emerald-400' : 'text-rose-400 font-mono'}>
               {formatINR(p.pnl_amount)} ({p.total_return_pct > 0 ? '+' : ''}{p.total_return_pct}%)
             </span>
           </div>
@@ -110,45 +123,125 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         {/* Volatility & Sharpe */}
         <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-4 shadow-sm hover:border-gray-700 transition-colors">
           <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
-            <span>Volatility & Quality</span>
-            <span className="text-[11px] text-gray-500 font-mono">252 Days Ann.</span>
+            <span>Volatility & Sharpe</span>
+            <span className="text-[11px] text-gray-500 font-mono">252d Ann.</span>
           </div>
           <div className="text-2xl font-bold text-white tracking-tight font-mono">
             {r.annualized_volatility_pct}%
           </div>
           <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
-            <span>Sharpe Ratio (Rf 6.5%):</span>
+            <span>Sharpe (Rf 6.5%):</span>
             <span className="font-semibold text-emerald-400 font-mono">{r.sharpe_ratio}</span>
           </div>
         </div>
 
-        {/* Maximum Drawdown */}
+        {/* Relative Alpha / Beta vs Benchmark */}
         <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-4 shadow-sm hover:border-gray-700 transition-colors">
           <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
-            <span>Max Historical Drawdown</span>
-            <Activity className="w-3.5 h-3.5 text-rose-400" />
+            <span>Benchmark Relative</span>
+            <span className="badge-tag bg-slate-800 text-cyan-400 text-[10px] py-0 px-1">Beta: {bc.beta}</span>
           </div>
-          <div className="text-2xl font-bold text-rose-400 tracking-tight font-mono">
-            {r.max_drawdown_pct}%
+          <div className={`text-2xl font-bold font-mono tracking-tight ${bc.alpha_pct >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {bc.alpha_pct >= 0 ? '+' : ''}{bc.alpha_pct}% <span className="text-xs font-normal text-gray-400">Alpha</span>
           </div>
           <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
-            <span>NIFTY Max DD:</span>
-            <span className="text-gray-300 font-mono">{bm.max_drawdown_pct}%</span>
+            <span>Tracking Error:</span>
+            <span className="text-gray-300 font-mono">{bc.tracking_error_pct}%</span>
           </div>
         </div>
 
         {/* Primary 1-Day 95% VaR */}
         <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-4 shadow-sm hover:border-gray-700 transition-colors">
           <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
-            <span>1-Day 95% VaR (Historical)</span>
-            <span className="badge-tag bg-cyan-950 text-cyan-400 text-[10px] py-0 px-1.5">1-Day</span>
+            <span>1-Day 95% Tail Risk</span>
+            <span className="badge-tag bg-cyan-950 text-cyan-400 text-[10px] py-0 px-1.5">VaR</span>
           </div>
           <div className="text-2xl font-bold text-amber-400 tracking-tight font-mono">
             {formatINR(r.var_95_amount)}
           </div>
           <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
-            <span>95% CVaR Tail:</span>
+            <span>95% CVaR (Expected Shortfall):</span>
             <span className="text-rose-400 font-mono font-medium">{formatINR(r.cvar_95_amount)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Machine Learning Risk Classification & Explanation Section */}
+      <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800 pb-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400">
+              <Brain className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">Machine Learning Risk Classification & Attribution</h2>
+              <p className="text-xs text-gray-400">Trained Random Forest 9-Factor Classifier predicting tail risk regime</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-gray-400">Class Probabilities:</span>
+            <span className="badge-tag bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">
+              Low: {Math.round((ml.confidence_probabilities["Low"] || 0) * 100)}%
+            </span>
+            <span className="badge-tag bg-amber-950 text-amber-400 border border-amber-800 font-mono">
+              Medium: {Math.round((ml.confidence_probabilities["Medium"] || 0) * 100)}%
+            </span>
+            <span className="badge-tag bg-rose-950 text-rose-400 border border-rose-700 font-mono">
+              High: {Math.round((ml.confidence_probabilities["High"] || 0) * 100)}%
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Explanation narrative */}
+          <div className="lg:col-span-2 space-y-3">
+            <div className="bg-[#162032] p-4 rounded-xl border border-gray-800 text-xs text-gray-200 leading-relaxed">
+              <div className="font-semibold text-cyan-400 mb-1 flex items-center space-x-1.5">
+                <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                <span>Explainable Decision Rationale:</span>
+              </div>
+              <p>{ml.explanation}</p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              <div className="bg-[#162032]/60 p-2.5 rounded-lg border border-gray-800/80 text-center">
+                <span className="text-[10px] text-gray-400 block">Ann. Volatility</span>
+                <span className="text-xs font-mono font-bold text-white">{ml.calculated_features.annualized_volatility_pct}%</span>
+              </div>
+              <div className="bg-[#162032]/60 p-2.5 rounded-lg border border-gray-800/80 text-center">
+                <span className="text-[10px] text-gray-400 block">Max Drawdown</span>
+                <span className="text-xs font-mono font-bold text-rose-400">{ml.calculated_features.max_drawdown_pct}%</span>
+              </div>
+              <div className="bg-[#162032]/60 p-2.5 rounded-lg border border-gray-800/80 text-center">
+                <span className="text-[10px] text-gray-400 block">Div. Ratio</span>
+                <span className="text-xs font-mono font-bold text-emerald-400">{ml.calculated_features.diversification_ratio}x</span>
+              </div>
+              <div className="bg-[#162032]/60 p-2.5 rounded-lg border border-gray-800/80 text-center">
+                <span className="text-[10px] text-gray-400 block">Benchmark Beta</span>
+                <span className="text-xs font-mono font-bold text-cyan-400">{ml.calculated_features.beta_to_benchmark}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Feature Importances */}
+          <div className="bg-[#162032] p-4 rounded-xl border border-gray-800 space-y-2">
+            <h3 className="text-xs font-semibold text-white uppercase tracking-wider mb-2">Key Factor Importance</h3>
+            <div className="space-y-2 text-xs">
+              {ml.feature_attribution.slice(0, 5).map(f => (
+                <div key={f.feature} className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-gray-300">{f.display_name}</span>
+                    <span className="text-cyan-400 font-mono">{f.model_weight_pct}% weight</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="bg-cyan-500 h-1.5 rounded-full"
+                      style={{ width: `${Math.min(100, f.model_weight_pct * 2.5)}%` }}
+                    ></div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -261,6 +354,63 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
             <span>Diversification offsets standalone risk by {p.diversification_benefit_pct}%.</span>
           </div>
+        </div>
+      </div>
+
+      {/* AI Market Intelligence & Macro Regime Card */}
+      <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800 pb-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-emerald-950 border border-emerald-800 text-emerald-400">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">AI Market Intelligence & Macro Regime Context</h2>
+              <p className="text-xs text-gray-400">Macroeconomic sentiment and sector trend evaluation tailored to your holdings</p>
+            </div>
+          </div>
+          <span className="badge-tag bg-cyan-950 text-cyan-400 border border-cyan-800 text-xs font-semibold">
+            Outlook: {ai.overall_outlook}
+          </span>
+        </div>
+
+        {/* Macro Indicators */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {ai.macro_indicators.map((m, idx) => (
+            <div key={idx} className="bg-[#162032] p-3 rounded-xl border border-gray-800/80 space-y-1">
+              <span className="text-[10px] text-gray-400 uppercase tracking-wider block">{m.indicator}</span>
+              <div className="text-base font-bold font-mono text-white">{m.value}</div>
+              <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                m.sentiment === 'Bullish'
+                  ? 'bg-emerald-950 text-emerald-400'
+                  : m.sentiment === 'Cautious'
+                  ? 'bg-rose-950 text-rose-400'
+                  : 'bg-cyan-950 text-cyan-400'
+              }`}>
+                {m.stance}
+              </span>
+              <p className="text-[11px] text-gray-400 leading-tight pt-1">{m.impact}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Sector breakdowns */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+          {ai.sector_analyses.map((sec, idx) => (
+            <div key={idx} className="bg-[#162032] p-3.5 rounded-xl border border-gray-800 flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="font-semibold text-white text-xs">{sec.sector}</span>
+                  <span className="badge-tag bg-slate-800 text-slate-300 text-[10px]">{sec.weight_pct}% Portfolio</span>
+                  <span className={`badge-tag text-[10px] ${
+                    sec.sentiment.includes('Bullish') ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400'
+                  }`}>{sec.sentiment}</span>
+                </div>
+                <p className="text-[11px] text-gray-300"><span className="text-emerald-400 font-medium">Catalysts: </span>{sec.catalysts}</p>
+                <p className="text-[11px] text-gray-400"><span className="text-rose-400 font-medium">Risks: </span>{sec.key_risks}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

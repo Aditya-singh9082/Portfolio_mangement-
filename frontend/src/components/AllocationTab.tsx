@@ -5,9 +5,13 @@ import {
   TrendingUp,
   ShieldCheck,
   ArrowRight,
-  Info
+  Info,
+  Grid,
+  Layers,
+  Scale
 } from 'lucide-react';
 import { PortfolioAnalyzeResponse } from '../types';
+import { formatINR } from '../lib/api';
 import {
   ResponsiveContainer,
   BarChart,
@@ -25,9 +29,11 @@ interface AllocationTabProps {
 export const AllocationTab: React.FC<AllocationTabProps> = ({ data }) => {
   const rec = data.recommendation;
   const currentWeights = data.portfolio.weights;
+  const corr = data.correlation_matrix || {};
+  const tickers = Object.keys(rec.weights);
 
   // Build comparison data for chart
-  const comparisonData = Object.keys(rec.weights).map((ticker) => {
+  const comparisonData = tickers.map((ticker) => {
     const curr = (currentWeights[ticker] || 0) * 100;
     const recom = (rec.weights[ticker] || 0) * 100;
     const delta = recom - curr;
@@ -40,19 +46,28 @@ export const AllocationTab: React.FC<AllocationTabProps> = ({ data }) => {
     };
   });
 
+  // Helper for correlation color
+  const getCorrColor = (val: number) => {
+    if (val >= 0.7) return 'bg-rose-950/80 text-rose-300 font-bold';
+    if (val >= 0.4) return 'bg-amber-950/60 text-amber-300';
+    if (val >= 0.1) return 'bg-slate-800 text-slate-300';
+    if (val >= -0.1) return 'bg-cyan-950/60 text-cyan-300';
+    return 'bg-emerald-950/80 text-emerald-300 font-bold';
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-white tracking-tight">Allocation Lab & Markowitz Optimization</h2>
+          <h2 className="text-base font-bold text-white tracking-tight">Allocation Lab, Correlations & Strategy Comparison</h2>
           <p className="text-xs text-gray-400">
-            Mean-variance optimization under long-only constraints (w &ge; 0, &sum;w = 100%).
+            Markowitz mean-variance optimization, asset correlation matrix, and 4-way strategy comparison.
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <span className="badge-tag bg-emerald-950 text-emerald-400 border border-emerald-800">
-            Target: {rec.target_profile} Profile
+          <span className="badge-tag bg-emerald-950 text-emerald-400 border border-emerald-800 font-semibold">
+            Optimized Target: {rec.target_profile.toUpperCase()} Profile
           </span>
         </div>
       </div>
@@ -77,6 +92,119 @@ export const AllocationTab: React.FC<AllocationTabProps> = ({ data }) => {
           <div className="text-[11px] text-gray-500 mt-1">Vs Current: {data.risk.annualized_volatility_pct}%</div>
         </div>
       </div>
+
+      {/* Strategy Comparison Table (PS Requirement 5) */}
+      <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
+              <Scale className="w-4 h-4 text-emerald-400" />
+              <span>Portfolio Strategy Comparison (Side-by-Side)</span>
+            </h3>
+            <p className="text-xs text-gray-400">
+              Comparing your original allocation, the system's recommended optimal weights, equal weight (1/N), and NIFTY 50 benchmark
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-gray-300">
+            <thead className="bg-[#162032] text-gray-400 uppercase text-[10px] tracking-wider border-b border-gray-800">
+              <tr>
+                <th className="py-2.5 px-3">Strategy</th>
+                <th className="py-2.5 px-3 text-right">Cumulative Return</th>
+                <th className="py-2.5 px-3 text-right">Annual Volatility</th>
+                <th className="py-2.5 px-3 text-right">Sharpe Ratio</th>
+                <th className="py-2.5 px-3 text-right">Max Drawdown</th>
+                <th className="py-2.5 px-3 text-right">1D 95% VaR (INR)</th>
+                <th className="py-2.5 px-3 text-right">1D 95% CVaR (INR)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800 font-mono">
+              {data.strategies.map((strat, idx) => {
+                const isRec = strat.name.includes("Recommended");
+                const isUser = strat.name.includes("Current");
+                return (
+                  <tr
+                    key={idx}
+                    className={`transition ${
+                      isRec
+                        ? 'bg-emerald-950/20 hover:bg-emerald-950/30'
+                        : isUser
+                        ? 'bg-slate-900/60 hover:bg-slate-900'
+                        : 'hover:bg-[#162032]/60'
+                    }`}
+                  >
+                    <td className="py-2.5 px-3 font-semibold text-white font-sans flex items-center space-x-2">
+                      <span>{strat.name}</span>
+                      {isRec && <span className="badge-tag bg-emerald-950 text-emerald-400 border border-emerald-800 text-[9px]">Target</span>}
+                    </td>
+                    <td className={`py-2.5 px-3 text-right font-bold ${strat.total_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {strat.total_return_pct > 0 ? '+' : ''}{strat.total_return_pct}%
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-amber-400">{strat.annualized_vol_pct}%</td>
+                    <td className="py-2.5 px-3 text-right text-cyan-400 font-bold">{strat.sharpe_ratio}</td>
+                    <td className="py-2.5 px-3 text-right text-rose-400">{strat.max_drawdown_pct}%</td>
+                    <td className="py-2.5 px-3 text-right text-gray-300">{formatINR(strat.var_95_1d_inr)}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-400">{formatINR(strat.cvar_95_1d_inr)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Asset Correlation Matrix Heatmap (PS Module 2) */}
+      {Object.keys(corr).length > 0 && (
+        <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
+                <Grid className="w-4 h-4 text-cyan-400" />
+                <span>Pairwise Asset Correlation Heatmap</span>
+              </h3>
+              <p className="text-xs text-gray-400">
+                Pearson correlation coefficients (&rho;) between daily returns of selected assets
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 text-[10px]">
+              <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300">&rho; &lt; 0.2 (High Diversification)</span>
+              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">&rho; ~0.4 (Moderate)</span>
+              <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300">&rho; &gt; 0.7 (High Co-movement)</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-center text-xs text-gray-300">
+              <thead className="bg-[#162032] text-gray-400 text-[11px] font-mono border-b border-gray-800">
+                <tr>
+                  <th className="py-2 px-3 text-left">Asset</th>
+                  {tickers.map(t => (
+                    <th key={t} className="py-2 px-2 text-center">{t.replace('.NS', '')}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800 font-mono text-[11px]">
+                {tickers.map(t1 => (
+                  <tr key={t1} className="hover:bg-[#162032]/40 transition">
+                    <td className="py-2 px-3 text-left font-semibold text-white font-sans">{t1.replace('.NS', '')}</td>
+                    {tickers.map(t2 => {
+                      const val = corr[t1] ? corr[t1][t2] : (t1 === t2 ? 1.0 : 0.0);
+                      const displayVal = typeof val === 'number' ? val.toFixed(2) : '-';
+                      return (
+                        <td key={t2} className={`py-2 px-2 ${getCorrColor(Number(val))}`}>
+                          {displayVal}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Recommendation Explanations */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-3">

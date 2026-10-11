@@ -4,7 +4,12 @@ import {
   Activity,
   Layers,
   ArrowUpRight,
-  Info
+  Info,
+  Award,
+  Zap,
+  CheckCircle,
+  XCircle,
+  BarChart3
 } from 'lucide-react';
 import { PortfolioAnalyzeResponse } from '../types';
 import { formatINR } from '../lib/api';
@@ -25,32 +30,93 @@ interface PerformanceTabProps {
 }
 
 export const PerformanceTab: React.FC<PerformanceTabProps> = ({ data }) => {
+  const p = data.portfolio;
+  const r = data.risk;
+  const bm = data.benchmark_metrics;
+  const bc = data.benchmark_comparison;
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-white tracking-tight">Performance & Backtest Comparison</h2>
+          <h2 className="text-base font-bold text-white tracking-tight">Historical Simulation & Benchmark Intelligence</h2>
           <p className="text-xs text-gray-400">
-            Historical portfolio trajectories aligned to common trading dates with NIFTY 50 benchmark.
+            Realized portfolio growth, risk-adjusted returns, and benchmark outperformance metrics against {bm.name}.
           </p>
         </div>
         <div className="flex items-center space-x-2 text-xs">
-          <span className="badge-tag bg-cyan-950 text-cyan-400 border border-cyan-800">
-            Benchmark: ^NSEI
+          <span className="badge-tag bg-cyan-950 text-cyan-400 border border-cyan-800 font-mono">
+            Benchmark: {bm.ticker}
           </span>
           <span className="badge-tag bg-slate-800 text-slate-300">
-            Aligned Dates: {data.performance_series.length} points
+            {data.performance_series.length} Aligned Trading Days
           </span>
+        </div>
+      </div>
+
+      {/* Relative Performance KPI Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-4">
+          <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
+            <span>Jensen's Alpha</span>
+            <span className={`badge-tag text-[9px] py-0 px-1 ${bc.outperforming_risk_adjusted ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400'}`}>
+              {bc.outperforming_risk_adjusted ? 'OUTPERFORMING' : 'NEUTRAL / LAGGING'}
+            </span>
+          </div>
+          <div className={`text-2xl font-bold font-mono ${bc.alpha_pct >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {bc.alpha_pct >= 0 ? '+' : ''}{bc.alpha_pct}%
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1">Excess return over CAPM benchmark hurdle</p>
+        </div>
+
+        <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-4">
+          <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
+            <span>Portfolio Beta (&beta;)</span>
+            <span className="text-gray-500 font-mono text-[10px]">Market Sensitivity</span>
+          </div>
+          <div className="text-2xl font-bold font-mono text-cyan-400">
+            {bc.beta}
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1">
+            {bc.beta > 1.1 ? 'Aggressive / High Beta' : bc.beta < 0.9 ? 'Defensive / Low Beta' : 'Market-Aligned Beta'}
+          </p>
+        </div>
+
+        <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-4">
+          <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
+            <span>Tracking Error</span>
+            <span className="text-gray-500 font-mono text-[10px]">Ann. Vol of Excess Ret</span>
+          </div>
+          <div className="text-2xl font-bold font-mono text-amber-400">
+            {bc.tracking_error_pct}%
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1">Dispersion from benchmark return path</p>
+        </div>
+
+        <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-4">
+          <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
+            <span>Information Ratio</span>
+            <span className="text-gray-500 font-mono text-[10px]">Alpha / Tracking Error</span>
+          </div>
+          <div className="text-2xl font-bold font-mono text-emerald-400">
+            {bc.information_ratio}
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1">Consistency of active managerial alpha</p>
         </div>
       </div>
 
       {/* Main Cumulative Growth Chart */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-800 pb-3">
           <div>
-            <h3 className="text-sm font-semibold text-white">Cumulative Return % Comparison</h3>
-            <p className="text-xs text-gray-400">Portfolio Return % vs NIFTY 50 over historical period</p>
+            <h3 className="text-sm font-semibold text-white">Historical Simulation: Wealth Growth Trajectory</h3>
+            <p className="text-xs text-gray-400">Simulated portfolio valuation vs {bm.name} on common trading dates</p>
+          </div>
+          <div className="flex items-center space-x-3 text-xs font-mono">
+            <span className="text-emerald-400 font-semibold">Port: {p.total_return_pct > 0 ? '+' : ''}{p.total_return_pct}%</span>
+            <span className="text-gray-600">|</span>
+            <span className="text-cyan-400 font-semibold">NIFTY: {bm.total_return_pct > 0 ? '+' : ''}{bm.total_return_pct}%</span>
           </div>
         </div>
 
@@ -61,12 +127,12 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ data }) => {
               <YAxis stroke="#4B5563" fontSize={11} unit="%" tickLine={false} />
               <Tooltip
                 contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', borderRadius: '0.5rem', fontSize: '12px' }}
-                formatter={(val: any, name: any) => [`${val}%`, name === 'portfolio_return_pct' ? 'Portfolio Return' : 'NIFTY 50 Return']}
+                formatter={(val: any, name: any) => [`${val}%`, name === 'portfolio_return_pct' ? 'Portfolio Return' : `${bm.name} Return`]}
                 labelStyle={{ color: '#9CA3AF' }}
               />
               <Legend wrapperStyle={{ fontSize: '12px' }} />
-              <Line type="monotone" dataKey="portfolio_return_pct" name="User Portfolio" stroke="#10B981" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="benchmark_return_pct" name="NIFTY 50 Benchmark" stroke="#06B6D4" strokeWidth={2} strokeDasharray="3 3" dot={false} />
+              <Line type="monotone" dataKey="portfolio_return_pct" name="Your Portfolio" stroke="#10B981" strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="benchmark_return_pct" name={bm.name} stroke="#06B6D4" strokeWidth={2} strokeDasharray="3 3" dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -76,11 +142,11 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ data }) => {
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-gray-800 pb-3">
           <div>
-            <h3 className="text-sm font-semibold text-white">Historical Drawdown Profile</h3>
-            <p className="text-xs text-gray-400">Peak-to-trough drawdown evolution</p>
+            <h3 className="text-sm font-semibold text-white">Historical Underwater Drawdown Profile</h3>
+            <p className="text-xs text-gray-400">Peak-to-trough drawdown evolution across historical market regimes</p>
           </div>
           <span className="text-xs font-mono font-bold text-rose-400">
-            Max Drawdown: {data.risk.max_drawdown_pct}%
+            Portfolio Max Drawdown: {r.max_drawdown_pct}% (Benchmark: {bm.max_drawdown_pct}%)
           </span>
         </div>
 
@@ -97,71 +163,20 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ data }) => {
               <YAxis stroke="#4B5563" fontSize={11} unit="%" domain={['dataMin', 0]} tickLine={false} />
               <Tooltip
                 contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', borderRadius: '0.5rem', fontSize: '12px' }}
-                formatter={(val: any) => [`${val}%`, 'Drawdown']}
+                formatter={(val: any) => [`${val}%`, 'Drawdown from Peak']}
                 labelStyle={{ color: '#9CA3AF' }}
               />
-              <Area type="monotone" dataKey="drawdown_pct" stroke="#F43F5E" strokeWidth={1.5} fill="url(#ddGrad)" />
+              <Area type="monotone" dataKey="drawdown_pct" stroke="#F43F5E" strokeWidth={1.5} fillOpacity={1} fill="url(#ddGrad)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Strategy Comparison Matrix */}
+      {/* Individual Asset Performance Table */}
       <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
         <div className="border-b border-gray-800 pb-3">
-          <h3 className="text-sm font-semibold text-white">Strategy Comparison Matrix</h3>
-          <p className="text-xs text-gray-400">
-            Comparing User Allocation against Equal-Weighting, Markowitz Recommended Allocation, and NIFTY 50.
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-gray-300">
-            <thead className="bg-[#162032] text-gray-400 uppercase text-[10px] tracking-wider border-b border-gray-800">
-              <tr>
-                <th className="py-2.5 px-3">Strategy</th>
-                <th className="py-2.5 px-3 text-right">Total Return %</th>
-                <th className="py-2.5 px-3 text-right">Ann. Volatility %</th>
-                <th className="py-2.5 px-3 text-right">Sharpe Ratio</th>
-                <th className="py-2.5 px-3 text-right">Max Drawdown %</th>
-                <th className="py-2.5 px-3 text-right">1-Day 95% VaR (INR)</th>
-                <th className="py-2.5 px-3 text-right">1-Day 95% CVaR (INR)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800 font-mono">
-              {data.strategies.map((s, idx) => (
-                <tr key={idx} className="hover:bg-[#162032]/60 transition">
-                  <td className="py-2.5 px-3 font-semibold text-white font-sans">{s.name}</td>
-                  <td className={`py-2.5 px-3 text-right ${s.total_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {s.total_return_pct}%
-                  </td>
-                  <td className="py-2.5 px-3 text-right text-gray-300">{s.annualized_vol_pct}%</td>
-                  <td className="py-2.5 px-3 text-right text-cyan-400 font-bold">{s.sharpe_ratio}</td>
-                  <td className="py-2.5 px-3 text-right text-rose-400">{s.max_drawdown_pct}%</td>
-                  <td className="py-2.5 px-3 text-right text-amber-400">{formatINR(s.var_95_1d_inr)}</td>
-                  <td className="py-2.5 px-3 text-right text-rose-300">{formatINR(s.cvar_95_1d_inr)}</td>
-                </tr>
-              ))}
-              {/* Benchmark Row */}
-              <tr className="bg-[#162032]/40 font-semibold border-t-2 border-gray-700">
-                <td className="py-2.5 px-3 text-cyan-400 font-sans">NIFTY 50 Benchmark (^NSEI)</td>
-                <td className="py-2.5 px-3 text-right text-emerald-400">{data.benchmark_metrics.total_return_pct}%</td>
-                <td className="py-2.5 px-3 text-right text-gray-300">{data.benchmark_metrics.annualized_vol_pct}%</td>
-                <td className="py-2.5 px-3 text-right text-cyan-400">{data.benchmark_metrics.sharpe_ratio}</td>
-                <td className="py-2.5 px-3 text-right text-rose-400">{data.benchmark_metrics.max_drawdown_pct}%</td>
-                <td className="py-2.5 px-3 text-right text-gray-500">—</td>
-                <td className="py-2.5 px-3 text-right text-gray-500">—</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Constituent Assets Table */}
-      <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-sm space-y-4">
-        <div className="border-b border-gray-800 pb-3">
-          <h3 className="text-sm font-semibold text-white">Constituent Asset Metrics</h3>
-          <p className="text-xs text-gray-400">Individual historical performance metrics for active holdings</p>
+          <h3 className="text-sm font-semibold text-white">Constituent Asset Performance & Risk Table</h3>
+          <p className="text-xs text-gray-400">Historical performance statistics across identical date range</p>
         </div>
 
         <div className="overflow-x-auto">
@@ -170,27 +185,29 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ data }) => {
               <tr>
                 <th className="py-2.5 px-3">Asset</th>
                 <th className="py-2.5 px-3">Sector</th>
-                <th className="py-2.5 px-3 text-right">Weight %</th>
                 <th className="py-2.5 px-3 text-right">Latest Price</th>
-                <th className="py-2.5 px-3 text-right">Ann. Return %</th>
+                <th className="py-2.5 px-3 text-right">Weight %</th>
+                <th className="py-2.5 px-3 text-right">CAGR Return %</th>
                 <th className="py-2.5 px-3 text-right">Ann. Volatility %</th>
                 <th className="py-2.5 px-3 text-right">Sharpe</th>
-                <th className="py-2.5 px-3 text-right">Max Drawdown %</th>
+                <th className="py-2.5 px-3 text-right">Max Drawdown</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800 font-mono">
               {data.asset_metrics.map((a) => (
                 <tr key={a.ticker} className="hover:bg-[#162032]/60 transition">
-                  <td className="py-2 px-3 font-semibold text-white font-sans">{a.display_name} ({a.ticker.replace('.NS', '')})</td>
-                  <td className="py-2 px-3 text-gray-400 font-sans">{a.sector}</td>
-                  <td className="py-2 px-3 text-right text-cyan-400">{a.weight_pct}%</td>
-                  <td className="py-2 px-3 text-right text-gray-200">{formatINR(a.latest_price)}</td>
-                  <td className={`py-2 px-3 text-right ${a.annualized_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {a.annualized_return_pct}%
+                  <td className="py-2.5 px-3 font-semibold text-white font-sans">
+                    {a.display_name} <span className="text-[10px] text-gray-400 font-mono">({a.ticker.replace('.NS', '')})</span>
                   </td>
-                  <td className="py-2 px-3 text-right text-gray-300">{a.annualized_vol_pct}%</td>
-                  <td className="py-2 px-3 text-right text-cyan-400">{a.sharpe_ratio}</td>
-                  <td className="py-2 px-3 text-right text-rose-400">{a.max_drawdown_pct}%</td>
+                  <td className="py-2.5 px-3 text-gray-400 font-sans">{a.sector}</td>
+                  <td className="py-2.5 px-3 text-right text-gray-200">₹{a.latest_price.toLocaleString('en-IN')}</td>
+                  <td className="py-2.5 px-3 text-right text-cyan-400">{a.weight_pct}%</td>
+                  <td className={`py-2.5 px-3 text-right font-bold ${a.annualized_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {a.annualized_return_pct > 0 ? '+' : ''}{a.annualized_return_pct}%
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-amber-400">{a.annualized_vol_pct}%</td>
+                  <td className="py-2.5 px-3 text-right text-cyan-400">{a.sharpe_ratio}</td>
+                  <td className="py-2.5 px-3 text-right text-rose-400">{a.max_drawdown_pct}%</td>
                 </tr>
               ))}
             </tbody>

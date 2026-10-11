@@ -17,27 +17,38 @@ from api.schemas import (
     PortfolioAnalyzeRequest,
     PortfolioAnalyzeResponse,
     StressTestRequest,
-    StressTestResponse
+    StressTestResponse,
+    MarketDataRefreshResponse
 )
-from api.services.market_data import get_supported_universe, get_price_panel
+from api.services.market_data import (
+    get_supported_universe,
+    get_price_panel,
+    refresh_market_data,
+    SECTOR_MAP
+)
 from api.services.portfolio import (
     calculate_portfolio_series,
     compute_performance_metrics,
-    compute_asset_metrics
+    compute_asset_metrics,
+    compute_correlation_matrix,
+    compute_benchmark_comparison_details,
+    compute_risk_return_points
 )
 from api.services.risk import (
     classify_risk,
     compute_risk_measures_all_models,
     compute_risk_contributions,
-    get_static_diagnostics
+    compute_dynamic_diagnostics
 )
+from api.services.ml_risk import predict_portfolio_risk_ml
+from api.services.ai_intelligence import generate_market_intelligence
 from api.services.optimizer import generate_recommendation_and_strategies
 from api.services.stress import run_stress_test
 
 app = FastAPI(
     title="Indian Portfolio Risk Intelligence API",
-    version="1.0.0",
-    description="Thin API exposing quantitative risk engine, VaR/CVaR, GARCH, FHS, stress testing, and Markowitz optimization."
+    version="2.0.0",
+    description="Quantitative risk engine, ML risk prediction, VaR/CVaR, GARCH, FHS, stress testing, and Markowitz optimization."
 )
 
 # Enable CORS for frontend development
@@ -65,6 +76,15 @@ def get_assets(query: Optional[str] = Query(None, description="Optional search t
             if q in a["ticker"].lower() or q in a["display_name"].lower() or q in a["sector"].lower()
         ]
     return universe
+
+
+@app.post("/api/market-data/refresh", response_model=MarketDataRefreshResponse)
+def refresh_data():
+    """Fetches the latest closing prices up to today from Yahoo Finance for all tickers."""
+    try:
+        return refresh_market_data()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Market data refresh failed: {str(e)}")
 
 
 @app.post("/api/portfolio/analyze", response_model=PortfolioAnalyzeResponse)
@@ -108,14 +128,19 @@ def analyze_portfolio(req: PortfolioAnalyzeRequest):
     bench_returns = bench_series.pct_change().dropna(how="any")
     bench_perf = compute_performance_metrics(bench_returns)
 
-    # Risk Classification
+    # Rule-based Risk Classification
     risk_class, risk_basis = classify_risk(
         port_perf["annualized_vol_pct"],
         port_perf["max_drawdown_pct"]
     )
 
-    # Comprehensive Risk Measures across models (Historical, Normal, Student-t, Monte Carlo, GARCH-t, FHS)
+    # Machine Learning Risk Classification (Random Forest 9-factor model)
     asset_returns = prices_df.pct_change().dropna(how="any")
+    ml_risk_res = predict_portfolio_risk_ml(
+        port_returns, asset_returns, weights_arr, bench_returns
+    )
+
+    # Comprehensive Risk Measures across models (Historical, Normal, Student-t, Monte Carlo, GARCH-t, FHS)
     risk_results = compute_risk_measures_all_models(
         port_returns, asset_returns, weights_arr, req.investment_amount
     )
@@ -125,13 +150,41 @@ def analyze_portfolio(req: PortfolioAnalyzeRequest):
         asset_returns, weights_arr, req.investment_amount
     )
 
-    # Recommendations & Strategy Comparisons
+    # Recommendations & Strategy Comparisons (Original, Recommended, Equal-Weight, Benchmark)
     recommendation, strategies = generate_recommendation_and_strategies(
         prices_df, weights_arr, req.investment_amount, req.risk_preference, bench_returns
     )
 
     # Asset-level metrics table
     asset_metrics = compute_asset_metrics(prices_df, weights_arr)
+
+    # Correlation Matrix (NxN)
+    correlation_matrix = compute_correlation_matrix(prices_df)
+
+    # Benchmark Relative Details (Alpha, Beta, Correlation, Tracking Error, Information Ratio)
+    bench_details = compute_benchmark_comparison_details(
+        port_returns, bench_returns, req.benchmark_ticker
+    )
+
+    # Equal-weight portfolio metrics for scatter comparison
+    eq_w = np.repeat(1.0 / len(req.tickers), len(req.tickers))
+    eq_returns = pd.Series(asset_returns.values @ eq_w, index=asset_returns.index)
+    eq_perf = compute_performance_metrics(eq_returns)
+
+    # Coordinates for Risk vs Return Scatter Plot
+    risk_return_points = compute_risk_return_points(
+        asset_metrics, port_perf, recommendation, bench_perf, eq_perf
+    )
+
+    # Dynamic Out-of-Sample Diagnostics & Backtest Scorecard (100% computed from data!)
+    model_diagnostics = compute_dynamic_diagnostics(
+        port_returns, req.investment_amount
+    )
+
+    # AI-Based Market Intelligence Report
+    market_intelligence = generate_market_intelligence(
+        req.tickers, norm_weights, SECTOR_MAP
+    )
 
     # Downsampled performance series (max 120 points for smooth charting)
     step = max(1, len(port_value_series) // 120)
@@ -156,7 +209,7 @@ def analyze_portfolio(req: PortfolioAnalyzeRequest):
 
     # Warnings & Caveats
     warnings = [
-        f"Data as of {data_as_of}. End-of-day adjusted close data used (not real-time streaming).",
+        f"Data as of {data_as_of}. Daily adjusted close data used (source: Yahoo Finance / NSE feed).",
         "Assumes long-only, daily rebalancing with zero transaction fees and survivorship bias caveats.",
         "Model estimates and historical backtests are informative, not guarantees or personal financial advice."
     ]
@@ -187,20 +240,25 @@ def analyze_portfolio(req: PortfolioAnalyzeRequest):
             "cvar_95_amount": risk_results["primary_cvar_95"],
             "var_method": risk_results["primary_method"]
         },
+        ml_risk_prediction=ml_risk_res,
+        market_intelligence=market_intelligence,
         asset_metrics=asset_metrics,
+        correlation_matrix=correlation_matrix,
+        risk_return_points=risk_return_points,
         risk_contributions=contributions,
         performance_series=perf_series,
         benchmark_metrics={
             "ticker": req.benchmark_ticker,
-            "name": "NIFTY 50 Index",
+            "name": "NIFTY 50 Index" if "^NSEI" in req.benchmark_ticker else req.benchmark_ticker,
             "total_return_pct": bench_perf["total_return_pct"],
             "annualized_vol_pct": bench_perf["annualized_vol_pct"],
             "max_drawdown_pct": bench_perf["max_drawdown_pct"],
             "sharpe_ratio": bench_perf["sharpe_ratio"]
         },
+        benchmark_comparison=bench_details,
         strategies=strategies,
         recommendation=recommendation,
-        model_diagnostics=get_static_diagnostics(),
+        model_diagnostics=model_diagnostics,
         risk_metrics_by_horizon=risk_results["metrics_by_horizon"],
         warnings=warnings
     )
@@ -228,9 +286,9 @@ def stress_test(req: StressTestRequest):
 def get_demo_portfolio():
     """Supplies known-good default demo portfolio (15 market-cap weighted stocks, ₹1 Cr)."""
     weights = [
-        0.1694, 0.0771, 0.0476, 0.1127, 0.0888,
-        0.0898, 0.0491, 0.0347, 0.0528, 0.1095,
-        0.0402, 0.0353, 0.0425, 0.0251, 0.0253
+        0.1634, 0.0805, 0.0428, 0.1125, 0.1004,
+        0.0914, 0.0450, 0.0344, 0.0526, 0.1162,
+        0.0371, 0.0346, 0.0436, 0.0224, 0.0231
     ]
     req = PortfolioAnalyzeRequest(
         tickers=C.TICKERS,

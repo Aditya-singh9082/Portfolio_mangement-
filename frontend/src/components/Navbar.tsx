@@ -1,27 +1,30 @@
-import React from 'react';
-import { ShieldAlert, TrendingUp, BarChart3, PieChart, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
+import { ShieldAlert, TrendingUp, BarChart3, PieChart, AlertTriangle, CheckCircle2, Layers, RefreshCw, Radio } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   dataAsOf: string;
   isFallback: boolean;
+  onRefreshMarketData?: () => void;
+  isRefreshing?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   dataAsOf,
-  isFallback
+  isFallback,
+  onRefreshMarketData,
+  isRefreshing = false
 }) => {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'builder', label: 'Portfolio Builder', icon: Layers },
-    { id: 'risk', label: 'Risk Analysis', icon: ShieldAlert },
-    { id: 'performance', label: 'Performance & Backtest', icon: TrendingUp },
-    { id: 'allocation', label: 'Allocation Lab', icon: PieChart },
+    { id: 'risk', label: 'Risk Analysis & Frontier', icon: ShieldAlert },
+    { id: 'performance', label: 'Performance & Simulation', icon: TrendingUp },
+    { id: 'allocation', label: 'Allocation & Correlations', icon: PieChart },
     { id: 'stress', label: 'Stress Lab', icon: AlertTriangle },
-    { id: 'validation', label: 'Model Validation', icon: CheckCircle2 },
+    { id: 'validation', label: 'Dynamic Backtest', icon: CheckCircle2 },
   ];
 
   return (
@@ -35,19 +38,42 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-bold text-lg tracking-tight text-white">REQUIEM RISK</span>
+                <span className="font-bold text-lg tracking-tight text-white">QUANTUM RISK</span>
                 <span className="badge-tag bg-cyan-950 text-cyan-400 border border-cyan-800">NSE Large-Cap</span>
               </div>
-              <p className="text-xs text-gray-400 hidden sm:block">Indian Portfolio Risk Intelligence & VaR Engine</p>
+              <p className="text-xs text-gray-400 hidden sm:block">AI & ML Portfolio Risk Engine | Live Market Intelligence</p>
             </div>
           </div>
 
-          {/* Right Status Meta */}
+          {/* Right Status Meta & Live Sync */}
           <div className="flex items-center space-x-3">
             <div className="text-right hidden sm:block">
-              <div className="text-xs text-gray-400">Data Date: <span className="text-gray-200 font-mono font-medium">{dataAsOf || '2026-06-08'}</span></div>
+              <div className="flex items-center justify-end space-x-1.5 text-xs text-gray-400">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>Data Feed: <span className="text-gray-200 font-mono font-medium">{dataAsOf || '2026-10-09'}</span></span>
+              </div>
               <div className="text-[11px] text-gray-500">Benchmark: <span className="text-cyan-400 font-mono">^NSEI (NIFTY 50)</span></div>
             </div>
+
+            {onRefreshMarketData && (
+              <button
+                onClick={onRefreshMarketData}
+                disabled={isRefreshing}
+                title="Fetch latest closing prices from Yahoo Finance"
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition shadow-sm ${
+                  isRefreshing
+                    ? 'bg-slate-800 text-gray-400 border-gray-700 cursor-not-allowed'
+                    : 'bg-[#1E293B] hover:bg-[#2A3B52] text-cyan-400 border-cyan-700/60 hover:border-cyan-500'
+                }`}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
+                <span>{isRefreshing ? 'Syncing...' : 'Sync Market Data'}</span>
+              </button>
+            )}
+
             {isFallback && (
               <span className="badge-tag bg-amber-950/70 text-amber-400 border border-amber-800/80">
                 Verified Fallback Dataset

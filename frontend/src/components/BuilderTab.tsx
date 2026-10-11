@@ -8,7 +8,9 @@ import {
   Calendar,
   Layers,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Search,
+  Check
 } from 'lucide-react';
 import { AssetInfo, PortfolioAnalyzeRequest } from '../types';
 import { formatINR } from '../lib/api';
@@ -35,6 +37,8 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
     currentRequest.risk_preference
   );
   const [startDate, setStartDate] = useState<string>(currentRequest.start_date || '2023-01-01');
+  const [benchmarkTicker, setBenchmarkTicker] = useState<string>(currentRequest.benchmark_ticker || '^NSEI');
+  const [customTickerInput, setCustomTickerInput] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const totalWeight = weights.reduce((acc, curr) => acc + curr, 0);
@@ -55,13 +59,35 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
 
   // Add stock to portfolio
   const handleAddTicker = (tickerToAdd: string) => {
-    if (tickers.includes(tickerToAdd)) return;
-    const newTickers = [...tickers, tickerToAdd];
-    const newWeights = [...weights, 0.1]; // initial default 10%
+    const clean = tickerToAdd.trim().toUpperCase();
+    if (!clean) return;
+
+    const knownGlobal = [
+      'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'SPY', 'QQQ', 'GLD',
+      'BTC-USD', 'ETH-USD', 'AMD', 'NFLX', 'BRK-B', 'JPM', 'V', 'INTC', 'DIS'
+    ];
+    let finalTicker = clean;
+    if (availableAssets.some(a => a.ticker.toUpperCase() === clean)) {
+      finalTicker = clean;
+    } else if (clean.includes('.') || clean.startsWith('^') || clean.includes('-') || knownGlobal.includes(clean)) {
+      finalTicker = clean;
+    } else {
+      // Default to Indian NSE .NS ticker
+      finalTicker = `${clean}.NS`;
+    }
+
+    if (tickers.includes(finalTicker)) {
+      setErrorMsg(`${finalTicker} is already in the portfolio.`);
+      return;
+    }
+    setErrorMsg(null);
+    const newTickers = [...tickers, finalTicker];
+    const newWeights = [...weights, 0.1]; // default 10%
     setTickers(newTickers);
     // Normalize after add
     const sum = newWeights.reduce((a, b) => a + b, 0);
     setWeights(newWeights.map(w => Number((w / sum).toFixed(4))));
+    setCustomTickerInput('');
   };
 
   // Remove stock
@@ -85,6 +111,17 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
     setWeights(updated);
   };
 
+  // Date range presets
+  const applyDatePreset = (presetYears: number) => {
+    const now = new Date();
+    if (presetYears === 0) {
+      setStartDate('2018-01-01');
+    } else {
+      const past = new Date(now.setFullYear(now.getFullYear() - presetYears));
+      setStartDate(past.toISOString().split('T')[0]);
+    }
+  };
+
   // Submit analysis
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,9 +136,17 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
       return;
     }
 
-    // Auto-normalize on submit if close to 100%
-    const sum = weights.reduce((a, b) => a + b, 0);
-    const finalWeights = weights.map(w => Number((w / sum).toFixed(4)));
+    // Auto-normalize if not summing to 1.0
+    let finalWeights = weights;
+    const sumW = weights.reduce((a, b) => a + b, 0);
+    if (Math.abs(sumW - 1.0) > 0.001) {
+      if (sumW <= 0) {
+        setErrorMsg("Sum of weights must be greater than 0.");
+        return;
+      }
+      finalWeights = weights.map(w => Number((w / sumW).toFixed(4)));
+      setWeights(finalWeights);
+    }
 
     onAnalyze({
       tickers,
@@ -110,7 +155,7 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
       risk_preference: riskPreference,
       start_date: startDate,
       end_date: null,
-      benchmark_ticker: '^NSEI'
+      benchmark_ticker: benchmarkTicker
     });
   };
 
@@ -118,81 +163,97 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111827] border border-[#1F293D] rounded-xl p-4">
+      {/* Header */}
+      <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-white tracking-tight">Portfolio Allocation Builder</h2>
-          <p className="text-xs text-gray-400">Configure custom NSE tickers, investment capital, and risk tolerances.</p>
+          <h2 className="text-base font-bold text-white tracking-tight">Interactive Portfolio Construction Studio</h2>
+          <p className="text-xs text-gray-400">
+            Select or enter multiple NSE/global assets, specify capital allocations, and test risk-return dynamics.
+          </p>
         </div>
         <div className="flex items-center space-x-2">
           <button
             type="button"
             onClick={onLoadDemo}
-            className="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#283548] text-cyan-300 text-xs font-semibold border border-cyan-800 transition-colors flex items-center space-x-1.5"
+            className="px-3.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#2A374F] text-cyan-400 text-xs font-semibold border border-cyan-800/60 shadow-sm transition flex items-center space-x-1.5"
           >
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Load Default 15-Stock Book</span>
+            <span>Load Default 15-Stock Portfolio</span>
           </button>
         </div>
       </div>
 
       {errorMsg && (
-        <div className="bg-rose-950/70 border border-rose-800 rounded-lg p-3 text-xs text-rose-300 flex items-center space-x-2">
-          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+        <div className="bg-rose-950/60 border border-rose-800 rounded-xl p-3 text-xs text-rose-300 flex items-center space-x-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{errorMsg}</span>
         </div>
       )}
 
+      {/* Main Form Grid */}
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Holdings & Weights */}
-        <div className="lg:col-span-2 bg-[#111827] border border-[#1F293D] rounded-xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+        {/* Left Column (2 cols): Holdings List */}
+        <div className="lg:col-span-2 bg-[#111827] border border-[#1F293D] rounded-xl p-5 space-y-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800 pb-3">
             <div>
-              <h3 className="text-sm font-semibold text-white">Active Constituents ({tickers.length})</h3>
-              <span className="text-xs text-gray-400">
-                Sum of Weights:{' '}
-                <span className={`font-mono font-bold ${Math.abs(totalWeight - 1.0) < 0.01 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {(totalWeight * 100).toFixed(1)}%
-                </span>
-              </span>
+              <h3 className="text-sm font-semibold text-white">Constituent Asset Holdings</h3>
+              <p className="text-xs text-gray-400">Adjust individual asset weights (0% to 100%)</p>
             </div>
+
             <div className="flex items-center space-x-2">
-              <button
-                type="button"
-                onClick={handleEqualize}
-                className="px-2.5 py-1 text-xs rounded bg-[#162032] hover:bg-[#1E293B] text-gray-300 border border-gray-700 transition"
-              >
-                Equalize (1/N)
-              </button>
+              <span className={`text-xs font-mono font-bold ${Math.abs(totalWeight - 1.0) < 0.005 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                Sum: {(totalWeight * 100).toFixed(1)}%
+              </span>
               <button
                 type="button"
                 onClick={handleNormalize}
-                className="px-2.5 py-1 text-xs rounded bg-[#162032] hover:bg-[#1E293B] text-gray-300 border border-gray-700 transition"
+                className="px-2.5 py-1 bg-[#1E293B] hover:bg-slate-700 text-gray-300 rounded text-[11px] font-medium border border-gray-700 transition"
               >
-                Normalize to 100%
+                Auto-Scale 100%
+              </button>
+              <button
+                type="button"
+                onClick={handleEqualize}
+                className="px-2.5 py-1 bg-[#1E293B] hover:bg-slate-700 text-gray-300 rounded text-[11px] font-medium border border-gray-700 transition"
+              >
+                Equalize (1/N)
               </button>
             </div>
           </div>
 
-          {/* Holdings List */}
-          <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-            {tickers.map((t, idx) => {
-              const assetInfo = availableAssets.find(a => a.ticker === t);
-              const weightVal = weights[idx] ?? 0;
+          {/* Holdings Rows */}
+          <div className="space-y-3">
+            {tickers.map((ticker, idx) => {
+              const assetInfo = availableAssets.find(a => a.ticker === ticker);
+              const displayName = assetInfo ? assetInfo.display_name : ticker.replace('.NS', '');
+              const sector = assetInfo ? assetInfo.sector : 'Equity';
+              const lastPrice = assetInfo ? assetInfo.last_price : 0;
+              const weightVal = weights[idx] || 0;
               const rupeeAllocation = weightVal * investmentAmount;
 
               return (
-                <div key={t} className="bg-[#162032] border border-[#1F293D] rounded-lg p-3 flex items-center justify-between gap-4">
-                  <div className="min-w-[140px]">
-                    <div className="font-semibold text-white text-xs">{assetInfo?.display_name || t}</div>
-                    <div className="text-[11px] text-gray-400 font-mono flex items-center space-x-2">
-                      <span>{t}</span>
-                      <span className="badge-tag bg-slate-800 text-slate-300 text-[9px] py-0 px-1">{assetInfo?.sector || 'Equity'}</span>
+                <div
+                  key={ticker}
+                  className="bg-[#162032] border border-gray-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-gray-700 transition"
+                >
+                  <div className="sm:w-1/3">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-semibold text-white text-xs">{displayName}</span>
+                      <span className="text-[10px] text-gray-400 font-mono">({ticker})</span>
+                    </div>
+                    <div className="text-[11px] text-gray-400 flex items-center space-x-2 mt-0.5">
+                      <span>{sector}</span>
+                      {lastPrice > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="font-mono text-gray-300">₹{lastPrice.toLocaleString('en-IN')}</span>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {/* Weight Slider & Input */}
-                  <div className="flex-1 max-w-xs flex items-center space-x-3">
+                  {/* Weight Slider & Rupee Value */}
+                  <div className="sm:w-1/2 flex items-center space-x-3">
                     <input
                       type="range"
                       min="0"
@@ -202,7 +263,7 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
                       onChange={(e) => handleWeightChange(idx, parseFloat(e.target.value))}
                       className="w-full accent-emerald-500 cursor-pointer"
                     />
-                    <div className="w-16 text-right">
+                    <div className="w-20 text-right">
                       <span className="text-xs font-mono font-bold text-white">{(weightVal * 100).toFixed(1)}%</span>
                       <div className="text-[10px] text-gray-500 font-mono">{formatINR(rupeeAllocation)}</div>
                     </div>
@@ -211,7 +272,7 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
                   <button
                     type="button"
                     onClick={() => handleRemoveTicker(idx)}
-                    className="p-1.5 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                    className="p-1.5 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-950/40 transition self-end sm:self-center"
                     title="Remove stock"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -221,33 +282,66 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
             })}
           </div>
 
-          {/* Add More Assets Dropdown */}
-          {unusedAssets.length > 0 && (
-            <div className="pt-2 border-t border-gray-800 flex items-center space-x-2">
-              <span className="text-xs text-gray-400">Add Stock:</span>
-              <select
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleAddTicker(e.target.value);
-                    e.target.value = '';
-                  }
-                }}
-                className="bg-[#162032] border border-gray-700 text-gray-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500"
-                defaultValue=""
-              >
-                <option value="" disabled>Select from NSE universe...</option>
-                {unusedAssets.map(a => (
-                  <option key={a.ticker} value={a.ticker}>
-                    {a.display_name} ({a.ticker}) — ₹{a.last_price}
-                  </option>
-                ))}
-              </select>
+          {/* Add Stock Controls (Universe dropdown + Custom ticker entry) */}
+          <div className="pt-3 border-t border-gray-800 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Dropdown for preloaded stocks */}
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">Add from Curated Universe (Indian & Global):</label>
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleAddTicker(e.target.value);
+                      e.target.value = '';
+                    }
+                  }}
+                  className="w-full bg-[#162032] border border-gray-700 text-gray-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select Indian NSE, US Tech, ETF, or Gold...</option>
+                  <optgroup label="🇮🇳 Indian NSE Large-Caps">
+                    {unusedAssets.filter(a => a.ticker.endsWith('.NS') || a.currency === 'INR').map(a => (
+                      <option key={a.ticker} value={a.ticker}>
+                        {a.display_name} ({a.ticker}) {a.last_price > 0 ? `— ₹${a.last_price}` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🌐 Global & US Equities, Commodities">
+                    {unusedAssets.filter(a => !a.ticker.endsWith('.NS') && a.currency !== 'INR').map(a => (
+                      <option key={a.ticker} value={a.ticker}>
+                        {a.display_name} ({a.ticker}) {a.last_price > 0 ? `— $${a.last_price}` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* Custom ticker input */}
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">Or Enter Any Ticker (e.g. TATAMOTORS.NS, NVDA, GLD):</label>
+                <div className="flex space-x-1.5">
+                  <input
+                    type="text"
+                    value={customTickerInput}
+                    onChange={(e) => setCustomTickerInput(e.target.value)}
+                    placeholder="e.g. TITAN.NS, AAPL, GLD, BTC-USD"
+                    className="w-full bg-[#162032] border border-gray-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono uppercase focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddTicker(customTickerInput)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Right Column: Parameters & Controls */}
-        <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 space-y-5 flex flex-col justify-between">
+        <div className="bg-[#111827] border border-[#1F293D] rounded-xl p-5 space-y-5 flex flex-col justify-between shadow-sm">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-white border-b border-gray-800 pb-2">Analysis Parameters</h3>
 
@@ -268,14 +362,14 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
                 />
               </div>
               <div className="text-[11px] text-gray-500 mt-1 font-mono">
-                Formatted: {formatINR(investmentAmount)}
+                Capital Sizing: {formatINR(investmentAmount)}
               </div>
             </div>
 
             {/* Risk Preference Profile */}
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">
-                Target Risk Preference
+                Preferred Risk Tolerance Level
               </label>
               <div className="grid grid-cols-3 gap-1.5">
                 {(['conservative', 'moderate', 'aggressive'] as const).map((pref) => (
@@ -293,41 +387,74 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-gray-500 mt-1.5">
+              <p className="text-[11px] text-gray-400 mt-1.5">
                 {riskPreference === 'conservative'
-                  ? 'Focuses on Minimum-Variance allocation to reduce downside risk.'
+                  ? 'Minimum-Variance optimization prioritizing capital preservation and low drawdown.'
                   : riskPreference === 'aggressive'
-                  ? 'Targets Maximum Sharpe ratio allocation to optimize return efficiency.'
-                  : 'Blended risk-adjusted target balancing variance and growth.'}
+                  ? 'Maximum-Sharpe optimization maximizing return efficiency per unit risk.'
+                  : 'Balanced 50/50 risk-parity blend balancing growth and volatility.'}
               </p>
             </div>
 
-            {/* Historical Analysis Start Date */}
+            {/* Benchmark Selection */}
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">
-                Historical Start Date
+                Market Benchmark
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={startDate}
-                  min="2018-01-01"
-                  max="2026-05-01"
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-[#162032] border border-gray-700 text-white rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-              <span className="text-[11px] text-gray-500">History available from 2018-01-01 (COVID-19 included).</span>
+              <select
+                value={benchmarkTicker}
+                onChange={(e) => setBenchmarkTicker(e.target.value)}
+                className="w-full bg-[#162032] border border-gray-700 text-cyan-400 font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500"
+              >
+                <option value="^NSEI">^NSEI (NIFTY 50 Index)</option>
+                <option value="^BSESN">^BSESN (S&P BSE SENSEX)</option>
+                <option value="^NDX">^NDX (NASDAQ-100)</option>
+                <option value="^GSPC">^GSPC (S&P 500)</option>
+              </select>
             </div>
 
-            {/* Benchmark Tag */}
+            {/* Historical Analysis Start Date & Quick Presets */}
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">
-                Benchmark Index
+                Simulation Start Date
               </label>
-              <div className="bg-[#162032] border border-gray-700 rounded-lg px-3 py-2 text-xs text-cyan-400 font-mono flex items-center justify-between">
-                <span>^NSEI (NIFTY 50)</span>
-                <span className="badge-tag bg-cyan-950 text-cyan-300 text-[10px]">Active</span>
+              <input
+                type="date"
+                value={startDate}
+                min="2018-01-01"
+                max="2026-09-01"
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full bg-[#162032] border border-gray-700 text-white rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500"
+              />
+              <div className="flex gap-1.5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => applyDatePreset(1)}
+                  className="px-2 py-0.5 bg-[#162032] hover:bg-slate-700 border border-gray-700 rounded text-[10px] text-gray-300"
+                >
+                  1 Year
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDatePreset(3)}
+                  className="px-2 py-0.5 bg-[#162032] hover:bg-slate-700 border border-gray-700 rounded text-[10px] text-gray-300"
+                >
+                  3 Years
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDatePreset(5)}
+                  className="px-2 py-0.5 bg-[#162032] hover:bg-slate-700 border border-gray-700 rounded text-[10px] text-gray-300"
+                >
+                  5 Years
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDatePreset(0)}
+                  className="px-2 py-0.5 bg-[#162032] hover:bg-slate-700 border border-gray-700 rounded text-[10px] text-gray-300"
+                >
+                  Max (2018)
+                </button>
               </div>
             </div>
           </div>
@@ -336,17 +463,17 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+            className="w-full py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-2 disabled:opacity-50 mt-4"
           >
             {isLoading ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Running Quantitative Engine...</span>
+                <span>Running Quantitative Risk Engine...</span>
               </>
             ) : (
               <>
                 <Sliders className="w-4 h-4" />
-                <span>Run Portfolio Risk Engine</span>
+                <span>Run Portfolio Risk Analysis</span>
               </>
             )}
           </button>

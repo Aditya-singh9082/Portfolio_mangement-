@@ -202,133 +202,181 @@ def compute_risk_contributions(
     return contributions, diversification_benefit_pct
 
 
-def get_static_diagnostics() -> Dict[str, Any]:
+def compute_dynamic_diagnostics(
+    port_returns: pd.Series,
+    investment_amount: float = PV_DEFAULT
+) -> Dict[str, Any]:
     """
-    Returns baseline model diagnostics and scorecards with distinct calibration statuses
-    strictly matching TASK (2).md requirements.
+    Computes out-of-sample backtesting and calibration scorecards dynamically
+    on the actual user-selected portfolio return series.
+    Evaluates:
+      - Historical Simulation, Parametric Normal, Student-t, GARCH(1,1)-t, and FHS.
+      - 95% and 99% 1-day VaR exception counts, empirical hit rates, and Kupiec POF p-values.
+      - Pinball / Quantile loss rankings.
     """
+    from scipy import stats
+
+    clean_returns = port_returns.dropna().sort_index()
+    T = len(clean_returns)
+
+    if T < 40:
+        return {
+            "backtest_window": {
+                "start_date": str(clean_returns.index[0].date()) if T > 0 else "N/A",
+                "end_date": str(clean_returns.index[-1].date()) if T > 0 else "N/A",
+                "observations": T,
+                "notice": "Insufficient sample for rigorous out-of-sample evaluation (<40 trading days)."
+            },
+            "models": [],
+            "pinball_loss_ranking": [],
+            "validation_warnings": ["Sample size is too small for statistical Kupiec tests."]
+        }
+
+    # Select out-of-sample test window (20% of data, capped between 40 and 250 days)
+    N_test = min(max(40, int(T * 0.20)), 250)
+    train_r = clean_returns.iloc[:-N_test]
+    test_r = clean_returns.iloc[-N_test:]
+
+    start_date_str = str(test_r.index[0].date())
+    end_date_str = str(test_r.index[-1].date())
+
+    # GARCH fit on train set (no lookahead)
+    try:
+        g_fit = rm.fit_garch(train_r)
+        gp = rm.garch_params(g_fit)
+        sigma_arr, _ = rm.garch_conditional_sigma(gp, clean_returns)
+        sigma_series = pd.Series(sigma_arr, index=clean_returns.index)
+        z_pool = rm.standardized_residuals(gp["mu"], sigma_arr, clean_returns)
+    except Exception:
+        gp = {"mu": float(train_r.mean()), "nu": 6.0}
+        sigma_series = clean_returns.rolling(30, min_periods=5).std().bfill()
+        z_pool = ((clean_returns - gp["mu"]) / np.maximum(sigma_series, 1e-6)).dropna().values
+
+    # Fit Normal & Student-t on train
+    mu_train = float(train_r.mean())
+    sd_train = float(train_r.std(ddof=1))
+    try:
+        nu_t, loc_t, scale_t = stats.t.fit(train_r.values)
+    except Exception:
+        nu_t, loc_t, scale_t = 6.0, mu_train, sd_train
+
+    models_eval = []
+    pinball_list = []
+
+    for alpha, conf_str in [(0.05, "95%"), (0.01, "99%")]:
+        z_norm = stats.norm.ppf(alpha)
+        q_t_val = float(stats.t.ppf(alpha, nu_t, loc_t, scale_t))
+        zq_garch = rm._std_t_quantile(alpha, gp["nu"])
+
+        # 1. Historical Quantiles (expanding window)
+        q_hist = [float(np.quantile(clean_returns[clean_returns.index < d].values, alpha)) for d in test_r.index]
+        # 2. Parametric Normal
+        q_norm = [mu_train + sd_train * z_norm for _ in test_r.index]
+        # 3. Student-t
+        q_t = [q_t_val for _ in test_r.index]
+        # 4. GARCH(1,1)-t
+        q_garch = [float(gp["mu"] + sigma_series[d] * zq_garch) for d in test_r.index]
+        # 5. FHS
+        q_fhs = []
+        for d in test_r.index:
+            zp = z_pool[clean_returns.index < d]
+            q_fhs.append(float(gp["mu"] + sigma_series[d] * np.quantile(zp, alpha)))
+
+        eval_candidates = [
+            ("Filtered Historical Simulation (FHS)", q_fhs),
+            ("GARCH(1,1)-t", q_garch),
+            ("Parametric Normal", q_norm),
+            ("Historical Simulation", q_hist),
+            ("Student-t", q_t)
+        ]
+
+        r_test_arr = test_r.values
+        expected_breaches = alpha * N_test
+
+        for model_name, q_preds in eval_candidates:
+            q_arr = np.array(q_preds)
+            breaches = int(np.sum(r_test_arr < q_arr))
+            hit_rate = round((breaches / N_test) * 100.0, 2)
+            target = round(alpha * 100.0, 1)
+
+            # Kupiec POF Likelihood Ratio test
+            p_hat = breaches / N_test
+            if breaches == 0:
+                lr = -2.0 * N_test * np.log(1.0 - alpha)
+            elif breaches == N_test:
+                lr = -2.0 * N_test * np.log(alpha)
+            else:
+                lr = -2.0 * (
+                    (N_test - breaches) * np.log((1.0 - alpha) / max(1e-8, 1.0 - p_hat)) +
+                    breaches * np.log(alpha / max(1e-8, p_hat))
+                )
+            kupiec_p = round(float(stats.chi2.sf(max(0.0, lr), df=1)), 3)
+
+            verdict = "PASS" if kupiec_p >= 0.05 else "FAIL"
+            if verdict == "PASS":
+                status = f"Well-calibrated coverage (p={kupiec_p:.3f} >= 0.05; breaches={breaches} vs target={expected_breaches:.1f})"
+            else:
+                if breaches > expected_breaches:
+                    status = f"Under-covered / tail risk underestimation (p={kupiec_p:.3f} < 0.05; breaches={breaches} vs target={expected_breaches:.1f})"
+                else:
+                    status = f"Over-conservative coverage (p={kupiec_p:.3f} < 0.05; breaches={breaches} vs target={expected_breaches:.1f})"
+
+            # Pinball loss * 1e4
+            p_loss = float(np.mean((r_test_arr - q_arr) * (alpha - (r_test_arr < q_arr).astype(float))) * 1e4)
+
+            models_eval.append({
+                "model": model_name,
+                "confidence": conf_str,
+                "horizon": "1-day",
+                "breaches": breaches,
+                "observations": N_test,
+                "hit_rate_pct": hit_rate,
+                "target_pct": target,
+                "kupiec_p": kupiec_p,
+                "status": status,
+                "verdict": verdict
+            })
+
+            pinball_list.append({
+                "confidence": conf_str,
+                "model": model_name,
+                "pinball_loss_x1e4": round(p_loss, 3)
+            })
+
+    # Rank pinball losses within each confidence group
+    ranked_pinball = []
+    for conf_str in ["95%", "99%"]:
+        sub = [item for item in pinball_list if item["confidence"] == conf_str]
+        sub.sort(key=lambda x: x["pinball_loss_x1e4"])
+        for rank_idx, item in enumerate(sub, start=1):
+            ranked_pinball.append({
+                "confidence": item["confidence"],
+                "model": item["model"],
+                "pinball_loss_x1e4": item["pinball_loss_x1e4"],
+                "rank": rank_idx
+            })
+
+    # Formulate dynamic warnings reflecting this exact portfolio
+    best_95 = [p["model"] for p in ranked_pinball if p["confidence"] == "95%" and p["rank"] == 1]
+    best_95_name = best_95[0] if best_95 else "FHS"
+    exp_99 = 0.01 * N_test
+
+    warnings = [
+        f"Dynamic out-of-sample backtest window: {N_test} trading days from {start_date_str} to {end_date_str}.",
+        f"At 99% confidence, expected exceptions across {N_test} days is {exp_99:.2f}. Small-sample power caveat applies.",
+        f"Top ranked model by empirical quantile (pinball) loss at 95% is {best_95_name}.",
+        "Statistical tests assess historical tail calibration; past model accuracy does not guarantee future drawdown protection."
+    ]
+
     return {
         "backtest_window": {
-            "start_date": "2026-03-02",
-            "end_date": "2026-06-05",
-            "observations": 65,
-            "notice": "Backtest window: 65 trading days — indicative short-term evaluation, not long-term validation."
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "observations": N_test,
+            "notice": f"Backtest window: {N_test} trading days ({start_date_str} to {end_date_str}) — dynamic evaluation on your specific portfolio."
         },
-        "models": [
-            {
-                "model": "GARCH(1,1)-t",
-                "confidence": "95%",
-                "horizon": "1-day",
-                "breaches": 8,
-                "observations": 66,
-                "hit_rate_pct": 12.12,
-                "target_pct": 5.0,
-                "kupiec_p": 0.021,
-                "status": "Under-covered / failed Kupiec POF at 95% in this sample (p=0.021)",
-                "verdict": "FAIL"
-            },
-            {
-                "model": "Filtered Historical Simulation (FHS)",
-                "confidence": "95%",
-                "horizon": "1-day",
-                "breaches": 3,
-                "observations": 65,
-                "hit_rate_pct": 4.62,
-                "target_pct": 5.0,
-                "kupiec_p": 0.885,
-                "status": "No rejection by Kupiec POF at 95% in this sample (p=0.885)",
-                "verdict": "PASS"
-            },
-            {
-                "model": "Parametric Normal",
-                "confidence": "95%",
-                "horizon": "1-day",
-                "breaches": 6,
-                "observations": 65,
-                "hit_rate_pct": 9.23,
-                "target_pct": 5.0,
-                "kupiec_p": 0.159,
-                "status": "No rejection by Kupiec POF at 95% in this sample",
-                "verdict": "PASS"
-            },
-            {
-                "model": "Historical Simulation",
-                "confidence": "95%",
-                "horizon": "1-day",
-                "breaches": 9,
-                "observations": 65,
-                "hit_rate_pct": 13.85,
-                "target_pct": 5.0,
-                "kupiec_p": 0.007,
-                "status": "Under-covered / failed Kupiec POF at 95% in this sample (p=0.007)",
-                "verdict": "FAIL"
-            },
-            {
-                "model": "Filtered Historical Simulation (FHS)",
-                "confidence": "99%",
-                "horizon": "1-day",
-                "breaches": 1,
-                "observations": 65,
-                "hit_rate_pct": 1.54,
-                "target_pct": 1.0,
-                "kupiec_p": 0.686,
-                "status": "No rejection (small sample warning: expected breaches = 0.65)",
-                "verdict": "PASS"
-            },
-            {
-                "model": "GARCH(1,1)-t",
-                "confidence": "99%",
-                "horizon": "1-day",
-                "breaches": 1,
-                "observations": 65,
-                "hit_rate_pct": 1.54,
-                "target_pct": 1.0,
-                "kupiec_p": 0.686,
-                "status": "No rejection (small sample warning: expected breaches = 0.65)",
-                "verdict": "PASS"
-            },
-            {
-                "model": "Parametric Normal",
-                "confidence": "99%",
-                "horizon": "1-day",
-                "breaches": 1,
-                "observations": 65,
-                "hit_rate_pct": 1.54,
-                "target_pct": 1.0,
-                "kupiec_p": 0.686,
-                "status": "No rejection (small sample warning: expected breaches = 0.65)",
-                "verdict": "PASS"
-            },
-            {
-                "model": "Historical Simulation",
-                "confidence": "99%",
-                "horizon": "1-day",
-                "breaches": 1,
-                "observations": 65,
-                "hit_rate_pct": 1.54,
-                "target_pct": 1.0,
-                "kupiec_p": 0.686,
-                "status": "No rejection (small sample warning: expected breaches = 0.65)",
-                "verdict": "PASS"
-            }
-        ],
-        "pinball_loss_ranking": [
-            {"confidence": "95%", "model": "Filtered Historical Simulation (FHS)", "pinball_loss_x1e4": 11.121, "rank": 1},
-            {"confidence": "95%", "model": "GARCH(1,1)-t", "pinball_loss_x1e4": 11.609, "rank": 2},
-            {"confidence": "95%", "model": "Parametric Normal", "pinball_loss_x1e4": 11.834, "rank": 3},
-            {"confidence": "95%", "model": "Historical Simulation", "pinball_loss_x1e4": 13.489, "rank": 4},
-            {"confidence": "95%", "model": "Student-t", "pinball_loss_x1e4": 13.596, "rank": 5},
-            {"confidence": "99%", "model": "Historical Simulation", "pinball_loss_x1e4": 2.945, "rank": 1},
-            {"confidence": "99%", "model": "Student-t", "pinball_loss_x1e4": 2.968, "rank": 2},
-            {"confidence": "99%", "model": "Filtered Historical Simulation (FHS)", "pinball_loss_x1e4": 3.055, "rank": 3},
-            {"confidence": "99%", "model": "Parametric Normal", "pinball_loss_x1e4": 3.088, "rank": 4},
-            {"confidence": "99%", "model": "GARCH(1,1)-t", "pinball_loss_x1e4": 3.113, "rank": 5}
-        ],
-        "validation_warnings": [
-            "Backtest window: 65 trading days — indicative short-term evaluation, not long-term regulatory validation.",
-            "At 99% confidence, expected exceptions over 65 days is only ~0.65. Non-rejection of a test is not conclusive proof of model correctness.",
-            "GARCH(1,1)-t exhibited 8 breaches (12.12%) vs 5% target (p=0.021) and failed 95% coverage in this test window.",
-            "Filtered Historical Simulation (FHS) passed both 95% (4.62% hit rate) and 99% (1.54% hit rate) coverage.",
-            "1-day bootstrap CVaR (₹4.56L [95% CI: ₹3.04L–₹6.57L]) and 1-week CVaR (₹5.70L–₹10.20L) have different horizons and must remain distinct."
-        ]
+        "models": models_eval,
+        "pinball_loss_ranking": ranked_pinball,
+        "validation_warnings": warnings
     }
+

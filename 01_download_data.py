@@ -116,6 +116,21 @@ def main():
         "pnl_inr": (port_ret * C.PORTFOLIO_VALUE_INR).round(2),
     })
 
+    # Download and save benchmark (^NSEI)
+    print("\nDownloading benchmark ^NSEI ...")
+    bench_raw = yf.download("^NSEI", start=C.HISTORY_START, end=C.DOWNLOAD_END, auto_adjust=True, progress=False)
+    if isinstance(bench_raw.columns, pd.MultiIndex):
+        bench_close = bench_raw["Close"].iloc[:, 0]
+    elif "Close" in bench_raw.columns:
+        bench_close = bench_raw["Close"]
+    else:
+        bench_close = bench_raw.iloc[:, 0]
+    bench_close.index = pd.to_datetime(bench_close.index)
+    bench_close.name = "^NSEI"
+    bench_close = bench_close.sort_index().ffill().dropna()
+    bench_df = pd.DataFrame({"^NSEI": bench_close})
+    bench_df.to_csv(C.BENCHMARK_CSV)
+
     # ---- save everything, clearly labelled ----
     prices.round(4).to_csv(C.PRICES_CSV)
     returns.round(6).to_csv(C.RETURNS_CSV)
@@ -123,7 +138,7 @@ def main():
     port_df.to_csv(C.PORT_RET_CSV)
 
     print("\nSaved datasets:")
-    for p in (C.PRICES_CSV, C.RETURNS_CSV, C.WEIGHTS_CSV, C.PORT_RET_CSV):
+    for p in (C.PRICES_CSV, C.BENCHMARK_CSV, C.RETURNS_CSV, C.WEIGHTS_CSV, C.PORT_RET_CSV):
         print(f"  {p}")
 
     print("\nPortfolio weights (market-cap, Rs 1 cr):")
@@ -133,6 +148,8 @@ def main():
     print(f"\nTotal allocation: Rs {weights['rupee_allocation'].sum():,.0f}")
     print(f"Portfolio return series: {len(port_ret)} days, "
           f"{port_ret.index.min().date()} -> {port_ret.index.max().date()}")
+    print(f"Benchmark series: {len(bench_close)} days, "
+          f"{bench_close.index.min().date()} -> {bench_close.index.max().date()}")
 
 
 if __name__ == "__main__":
